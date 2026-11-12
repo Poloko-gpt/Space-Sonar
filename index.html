@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Vector Space — Prototipo 01</title>
+<style>
+:root {
+  color-scheme: dark;
+  --cyan:#52dfff;
+  --panel:rgba(5,12,28,.88);
+}
+* { box-sizing:border-box }
+body {
+  margin:0;
+  overflow:hidden;
+  background:#050916;
+  color:#e9f7ff;
+  font:14px system-ui,sans-serif;
+}
+#scene { position:fixed; inset:0 }
+#hud { position:fixed; inset:0; pointer-events:none }
+.panel {
+  pointer-events:auto;
+  background:var(--panel);
+  border:1px solid rgba(82,223,255,.32);
+  border-radius:12px;
+  padding:12px;
+  box-shadow:0 8px 30px #0008;
+  backdrop-filter:blur(8px);
+}
+#title {
+  position:absolute;
+  top:12px;
+  left:12px;
+  max-width:calc(100% - 24px);
+}
+#controls {
+  position:absolute;
+  left:12px;
+  bottom:12px;
+  width:min(340px,calc(100% - 24px));
+  max-height:65vh;
+  overflow:auto;
+}
+h1 {
+  margin:0;
+  font-size:17px;
+  letter-spacing:.12em;
+  color:#8cecff;
+}
+h2 {
+  margin:0 0 8px;
+  font-size:13px;
+  color:#8cecff;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+p {
+  margin:6px 0;
+  color:#b8ccdc;
+  font-size:12px;
+  line-height:1.4;
+}
+.grid {
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:8px;
+}
+label {
+  display:block;
+  color:#a9c4d6;
+  font-size:11px;
+}
+input {
+  width:100%;
+  margin-top:4px;
+  padding:8px 6px;
+  border-radius:7px;
+  border:1px solid #28516b;
+  background:#08172a;
+  color:#fff;
+  font-size:14px;
+}
+button {
+  border:1px solid #3db9db;
+  color:#eafaff;
+  background:#10354b;
+  border-radius:8px;
+  padding:10px 12px;
+  font-weight:650;
+  cursor:pointer;
+}
+button:active { transform:scale(.98) }
+.buttons {
+  display:flex;
+  gap:8px;
+  margin-top:10px;
+}
+.buttons button { flex:1 }
+#status {
+  color:#77e8ff;
+  font-size:12px;
+  margin-top:9px;
+  min-height:18px;
+}
+#hint {
+  position:absolute;
+  right:12px;
+  bottom:14px;
+  width:min(230px,45vw);
+  text-align:right;
+  color:#9bb4c8;
+  font-size:11px;
+  text-shadow:0 2px 6px #000;
+}
+#legend {
+  color:#9bb4c8;
+  font-size:11px;
+  margin-top:7px;
+}
+@media(max-width:600px) {
+  #controls {
+    width:min(310px,calc(100% - 24px));
+  }
+  #hint {
+    top:74px;
+    bottom:auto;
+  }
+}
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div id="hud">
+  <div id="title" class="panel">
+    <h1>VECTOR SPACE
+      <span style="font-size:10px;color:#9bb4c8">
+        / PROTOTIPO 01
+      </span>
+    </h1>
+    <p>Simulación táctica 3D · Turno de prueba · Cámara orbital</p>
+  </div>
+
+  <section id="controls" class="panel">
+    <h2>Órdenes de movimiento</h2>
+    <p>Define el vector de desplazamiento de tu nave.
+    Los valores son unidades por segundo y el tiempo
+    se expresa en segundos.</p>
+
+    <div class="grid">
+      <label>Velocidad X
+        <input id="vx" type="number" step="0.1" value="1.2">
+      </label>
+      <label>Velocidad Y
+        <input id="vy" type="number" step="0.1" value="0.3">
+      </label>
+      <label>Velocidad Z
+        <input id="vz" type="number" step="0.1" value="-0.8">
+      </label>
+    </div>
+
+    <div class="grid" style="margin-top:8px">
+      <label>Tiempo (s)
+        <input id="time" type="number" min="1" max="120" value="12">
+      </label>
+      <label>Misil (vel.)
+        <input id="missileSpeed" type="number" min=".1" step=".1" value="2.5">
+      </label>
+      <label>Detonación (s)
+        <input id="detTime" type="number" min="1" max="120" value="8">
+      </label>
+    </div>
+
+    <div class="buttons">
+      <button id="preview">Previsualizar</button>
+      <button id="execute">Ejecutar turno</button>
+    </div>
+    <div class="buttons">
+      <button id="fire">Lanzar misil de prueba</button>
+      <button id="reset">Reiniciar</button>
+    </div>
+
+    <div id="status">Listo. Arrastra para girar la cámara; pellizca para acercar.</div>
+    <div id="legend">Cian: trayectoria propia · Naranja: misil · Amarillo: estrella · Ejes: XYZ</div>
+  </section>
+
+  <div id="hint">
+    Arrastra para orbitar · Pellizca o usa rueda para zoom
+    <br>El movimiento aún es una simulación local, no multijugador.
+  </div>
+</div>
+<script type="module">
+
+import * as THREE from
+'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+import { OrbitControls } from
+'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+// ESCENA 3D
+const host = document.querySelector('#scene');
+const scene = new THREE.Scene();
+
+scene.background = new THREE.Color(0x050916);
+scene.fog = new THREE.FogExp2(0x050916, 0.006);
+
+// CÁMARA
+const camera = new THREE.PerspectiveCamera(
+  58, innerWidth/innerHeight, .1, 1500
+);
+camera.position.set(24,18,28);
+
+// RENDERIZADOR
+const renderer = new THREE.WebGLRenderer({
+  antialias:true
+});
+
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+host.appendChild(renderer.domElement);
+
+// CONTROLES DE CÁMARA
+const orbit = new OrbitControls(camera,renderer.domElement);
+orbit.enableDamping = true;
+orbit.dampingFactor = .06;
+orbit.target.set(0,0,0);
+
+// ILUMINACIÓN
+scene.add(new THREE.AmbientLight(0x7899c0,1.2));
+
+const sunLight = new THREE.PointLight(0xffbd66,180,180);
+sunLight.position.set(0,0,0);
+scene.add(sunLight);
+
+// CUADRÍCULA ESPACIAL
+const grid = new THREE.GridHelper(
+  100,50,0x176b91,0x10334e
+);
+grid.material.transparent = true;
+grid.material.opacity = .42;
+scene.add(grid);
+
+// EJES XYZ
+const axes = new THREE.AxesHelper(14);
+scene.add(axes);
+
+// ESTRELLAS
+const starGeo = new THREE.BufferGeometry();
+const starPos = [];
+
+for(let i=0;i<1800;i++){
+  starPos.push(
+    (Math.random()-.5)*500,
+    (Math.random()-.5)*300,
+    (Math.random()-.5)*500
+  );
+}
+
+starGeo.setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute(starPos,3)
+);
+
+const stars = new THREE.Points(
+  starGeo,
+  new THREE.PointsMaterial({
+    color:0xb9dfff,
+    size:.45
+  })
+);
+scene.add(stars);
+
+// ESTRELLA CENTRAL
+const sun = new THREE.Mesh(
+  new THREE.SphereGeometry(2.1,32,24),
+  new THREE.MeshBasicMaterial({color:0xffc45e})
+);
+scene.add(sun);
+
+const glow = new THREE.Mesh(
+  new THREE.SphereGeometry(3.3,32,24),
+  new THREE.MeshBasicMaterial({
+    color:0xffa52e,
+    transparent:true,
+    opacity:.09
+  })
+);
+scene.add(glow);
+
+// CONSTRUCCIÓN DE NAVES
+function makeShip(color=0x55eaff){
+
+  const group = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(.65,2.2,6),
+    new THREE.MeshStandardMaterial({
+      color,
+      metalness:.65,
+      roughness:.28,
+      emissive:color,
+      emissiveIntensity:.18
+    })
+  );
+
+  body.rotation.x = Math.PI/2;
+  group.add(body);
+
+  const wing = new THREE.Mesh(
+    new THREE.BoxGeometry(2.4,.12,.55),
+    new THREE.MeshStandardMaterial({
+      color:0x2a789b,
+      metalness:.7,
+      roughness:.3
+    })
+  );
+
+  group.add(wing);
+
+  const light = new THREE.PointLight(color,4,10);
+  light.position.z = -1;
+  group.add(light);
+
+  return group;
+}
+
+// NAVE DEL JUGADOR
+const ship = makeShip();
+ship.position.set(-9,1,8);
+scene.add(ship);
+
+// NAVE ENEMIGA
+const enemy = makeShip(0xff617b);
+enemy.scale.setScalar(.9);
+enemy.position.set(12,-1,-8);
+scene.add(enemy);
+
+// GUARDAR POSICIÓN INICIAL
+const shipStart = ship.position.clone();
+
+let pathLine = null;
+let missile = null;
+let animation = null;
+let missileAnimation = null;
+
+// DIBUJAR TRAYECTORIAS
+function lineFor(points,color=0x55eaff){
+
+  const geo = new THREE.BufferGeometry()
+    .setFromPoints(points);
+
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    transparent:true,
+    opacity:.9
+  });
+
+  return new THREE.Line(geo,mat);
+}
+
+function clearLine(){
+
+  if(pathLine){
+    scene.remove(pathLine);
+    pathLine.geometry.dispose();
+    pathLine.material.dispose();
+    pathLine = null;
+  }
+}
+
+// LEER PARÁMETROS
+function values(){
+
+  const n = id =>
+    Number(document.getElementById(id).value)||0;
+
+  return {
+    v:new THREE.Vector3(
+      n('vx'),n('vy'),n('vz')
+    ),
+    t:Math.max(1,Math.min(120,n('time'))),
+    ms:Math.max(.1,n('missileSpeed')),
+    dt:Math.max(1,Math.min(120,n('detTime')))
+  };
+}
+// PREVISUALIZAR MOVIMIENTO
+function preview(){
+
+  const {v,t} = values();
+  clearLine();
+
+  const end = ship.position.clone().addScaledVector(v,t);
+
+  pathLine = lineFor(
+    [ship.position.clone(),end],
+    0x55eaff
+  );
+
+  scene.add(pathLine);
+
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(.35,16,12),
+    new THREE.MeshBasicMaterial({color:0x55eaff})
+  );
+
+  marker.position.copy(end);
+  marker.name = 'previewMarker';
+
+  const old = scene.getObjectByName('previewMarker');
+  if(old) scene.remove(old);
+
+  scene.add(marker);
+
+  document.querySelector('#status').textContent =
+    `Previsión: X ${end.x.toFixed(1)} · Y ${end.y.toFixed(1)} · Z ${end.z.toFixed(1)} después de ${t} s.`;
+}
+
+// EJECUTAR MOVIMIENTO
+function execute(){
+
+  const {v,t} = values();
+  clearLine();
+
+  const start = ship.position.clone();
+  const end = start.clone().addScaledVector(v,t);
+
+  const points = [];
+
+  for(let i=0;i<=40;i++){
+    points.push(start.clone().lerp(end,i/40));
+  }
+
+  pathLine = lineFor(points,0x55eaff);
+  scene.add(pathLine);
+
+  if(animation) cancelAnimationFrame(animation);
+
+  const began = performance.now();
+
+  function step(now){
+
+    const f = Math.min(
+      1,
+      (now-began)/Math.min(t*350,5000)
+    );
+
+    ship.position.copy(start).lerp(end,f);
+
+    if(f<1){
+      animation = requestAnimationFrame(step);
+    } else {
+      document.querySelector('#status').textContent =
+        'Turno resuelto. La nave alcanzó su posición prevista.';
+    }
+  }
+
+  animation = requestAnimationFrame(step);
+}
+
+// LANZAR MISIL
+function fire(){
+
+  if(missile){
+    scene.remove(missile);
+    missile = null;
+  }
+
+  const {ms,dt} = values();
+
+  const start = ship.position.clone();
+  const target = enemy.position.clone();
+
+  const direction = target.clone()
+    .sub(start)
+    .normalize();
+
+  missile = new THREE.Mesh(
+    new THREE.SphereGeometry(.22,16,12),
+    new THREE.MeshBasicMaterial({color:0xffa34d})
+  );
+
+  missile.position.copy(start);
+  scene.add(missile);
+
+  const flight = target.clone()
+    .sub(start).length()/ms;
+
+  const det = Math.min(dt,flight);
+
+  const began = performance.now();
+  const duration = Math.max(700,det*450);
+
+  if(missileAnimation){
+    cancelAnimationFrame(missileAnimation);
+  }
+
+  function step(now){
+
+    const f = Math.min(
+      1,
+      (now-began)/duration
+    );
+
+    missile.position.copy(start)
+      .addScaledVector(direction,ms*det*f);
+
+    if(f<1){
+
+      missileAnimation = requestAnimationFrame(step);
+
+    } else {
+
+      const burst = new THREE.Mesh(
+        new THREE.SphereGeometry(1.5,20,16),
+        new THREE.MeshBasicMaterial({
+          color:0xff8b37,
+          transparent:true,
+          opacity:.65,
+          wireframe:true
+        })
+      );
+
+      burst.position.copy(missile.position);
+
+      scene.add(burst);
+      scene.remove(missile);
+      missile = null;
+
+      document.querySelector('#status').textContent =
+        `Misil detonado tras ${det.toFixed(1)} s. Prototipo: sin cálculo de daño todavía.`;
+
+      setTimeout(()=>scene.remove(burst),900);
+    }
+  }
+
+  missileAnimation = requestAnimationFrame(step);
+}
+
+// REINICIAR
+function reset(){
+
+  if(animation) cancelAnimationFrame(animation);
+
+  if(missileAnimation){
+    cancelAnimationFrame(missileAnimation);
+  }
+
+  ship.position.copy(shipStart);
+  clearLine();
+
+  const old = scene.getObjectByName('previewMarker');
+
+  if(old) scene.remove(old);
+
+  if(missile){
+    scene.remove(missile);
+    missile = null;
+  }
+
+  document.querySelector('#status').textContent =
+    'Posición inicial restaurada.';
+}
+
+// CONECTAR BOTONES
+document.querySelector('#preview').onclick = preview;
+document.querySelector('#execute').onclick = execute;
+document.querySelector('#fire').onclick = fire;
+document.querySelector('#reset').onclick = reset;
+
+// ADAPTAR A PANTALLAS
+addEventListener('resize',()=>{
+
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// BUCLE PRINCIPAL
+function render(){
+
+  requestAnimationFrame(render);
+
+  orbit.update();
+  renderer.render(scene,camera);
+}
+
+render();
+
+</script>
+</body>
+</html>
